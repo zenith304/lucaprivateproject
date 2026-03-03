@@ -1,0 +1,60 @@
+﻿
+> clandestino-tmp@0.1.0 dev
+> next dev
+
+Ôû▓ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.219:3000
+- Environments: .env
+
+Ô£ô Starting...
+node.exe : ÔÜá The 
+"middleware" file 
+convention is 
+deprecated. Please use 
+"proxy" instead. Learn 
+more: https://nextjs.or
+g/docs/messages/middlew
+are-to-proxy
+In C:\Program Files\nod
+ejs\npm.ps1:29 car:3
++   & $NODE_EXE 
+$NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: (ÔÜá The "midd   
+ le...leware-to-pro    
+xy:String) [], Rem    
+oteException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+Ô£ô Ready in 1977ms
+Ô¿» AggregateError: 
+    at async 
+initSchema 
+(lib\db.ts:34:5)
+    at async query 
+(lib\db.ts:16:9)
+    at async GET (app\a
+pi\drivers\route.ts:6:2
+9)
+  32 |
+  33 | async function 
+initSchema() {
+> 34 |     await 
+pool.query(`
+     |     ^
+  35 |     CREATE 
+TABLE IF NOT EXISTS 
+users (
+  36 |       id TEXT 
+PRIMARY KEY,
+  37 |       email 
+TEXT UNIQUE NOT NULL, {
+  code: 'ECONNREFUSED'
+}
+ GET /api/drivers 500 in 1001ms (compile: 387ms, proxy.ts: 141ms, render: 472ms)

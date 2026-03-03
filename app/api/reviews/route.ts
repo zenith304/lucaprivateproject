@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -20,34 +20,36 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Recensione max 300 caratteri' }, { status: 400 });
     }
 
-    const db = getDb();
-    const ride = db.prepare('SELECT * FROM rides WHERE id = ?').get(ride_id) as any;
+    const { rows: rideRows } = await query('SELECT * FROM rides WHERE id = $1', [ride_id]);
+    const ride = rideRows[0] as any;
 
     if (!ride) return NextResponse.json({ error: 'Corsa non trovata' }, { status: 404 });
     if (ride.customer_user_id !== user.id) return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
     if (ride.status !== 'completed') return NextResponse.json({ error: 'Puoi recensire solo corse completate' }, { status: 400 });
 
-    const existing = db.prepare('SELECT id FROM reviews WHERE ride_id = ?').get(ride_id);
+    const { rows: reviewRows } = await query('SELECT id FROM reviews WHERE ride_id = $1', [ride_id]);
+    const existing = reviewRows[0];
     if (existing) return NextResponse.json({ error: 'Hai già lasciato una recensione' }, { status: 409 });
 
     const id = uuidv4();
     const now = new Date().toISOString();
 
-    db.prepare(`
+    await query(`
     INSERT INTO reviews (id, ride_id, driver_user_id, customer_user_id, stars, review_text, tags, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, ride_id, ride.driver_user_id, user.id, stars, review_text || '', JSON.stringify(tags || []), now);
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  `, [id, ride_id, ride.driver_user_id, user.id, stars, review_text || '', JSON.stringify(tags || []), now]);
 
     // Update driver rating avg
-    const avgResult = db.prepare(
-        'SELECT AVG(stars) as avg FROM reviews WHERE driver_user_id = ?'
-    ).get(ride.driver_user_id) as any;
+    const { rows: avgRows } = await query(
+        'SELECT AVG(stars) as avg FROM reviews WHERE driver_user_id = $1', [ride.driver_user_id]
+    );
+    const avgResult = avgRows[0] as any;
 
     if (avgResult?.avg) {
-        db.prepare('UPDATE drivers SET rating_avg = ? WHERE user_id = ?').run(
+        await query('UPDATE drivers SET rating_avg = $1 WHERE user_id = $2', [
             Math.round(avgResult.avg * 10) / 10,
             ride.driver_user_id
-        );
+        ]);
     }
 
     return NextResponse.json({ ok: true }, { status: 201 });
@@ -58,14 +60,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const driverId = searchParams.get('driver_id');
 
-    const db = getDb();
-    const reviews = db.prepare(`
+    const { rows: reviews } = await query(`
     SELECT r.*, u.nickname as customer_name
     FROM reviews r
     JOIN users u ON u.id = r.customer_user_id
-    WHERE r.driver_user_id = ?
+    WHERE r.driver_user_id = $1
     ORDER BY r.created_at DESC
-  `).all(driverId);
+  `, [driverId]);
 
     return NextResponse.json({ reviews });
 }

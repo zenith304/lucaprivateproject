@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 
 // GET /api/notifications - for the logged driver
@@ -9,17 +9,17 @@ export async function GET() {
         return NextResponse.json({ notifications: [], unread: 0 });
     }
 
-    const db = getDb();
-    const notifications = db.prepare(`
+    const { rows: notifications } = await query(`
     SELECT * FROM notifications
-    WHERE driver_user_id = ?
+    WHERE driver_user_id = $1
     ORDER BY created_at DESC
     LIMIT 20
-  `).all(user.id);
+  `, [user.id]);
 
-    const unread = (db.prepare(
-        'SELECT COUNT(*) as cnt FROM notifications WHERE driver_user_id = ? AND read = 0'
-    ).get(user.id) as any).cnt;
+    const { rows: unreadRows } = await query(
+        'SELECT COUNT(*) as cnt FROM notifications WHERE driver_user_id = $1 AND read = 0', [user.id]
+    );
+    const unread = (unreadRows[0] as any).cnt;
 
     return NextResponse.json({ notifications, unread });
 }
@@ -31,7 +31,6 @@ export async function POST() {
         return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
     }
 
-    const db = getDb();
-    db.prepare('UPDATE notifications SET read = 1 WHERE driver_user_id = ?').run(user.id);
+    await query('UPDATE notifications SET read = 1 WHERE driver_user_id = $1', [user.id]);
     return NextResponse.json({ ok: true });
 }

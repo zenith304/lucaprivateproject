@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { query } from '@/lib/db';
 import { createSession, setSessionCookie } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
 
 // POST /api/auth/login
 export async function POST(request: NextRequest) {
@@ -14,8 +13,8 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Email e password obbligatori' }, { status: 400 });
         }
 
-        const db = getDb();
-        const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
+        const { rows } = await query('SELECT * FROM users WHERE email = $1', [email]);
+        const user = rows[0] as any;
 
         if (!user || !bcrypt.compareSync(password, user.password_hash)) {
             return NextResponse.json({ error: 'Credenziali non valide' }, { status: 401 });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 
 // PATCH /api/rides/[id] - update ride status
@@ -19,8 +19,8 @@ export async function PATCH(
         return NextResponse.json({ error: 'Stato non valido' }, { status: 400 });
     }
 
-    const db = getDb();
-    const ride = db.prepare('SELECT * FROM rides WHERE id = ?').get(id) as any;
+    const { rows: rideRows } = await query('SELECT * FROM rides WHERE id = $1', [id]);
+    const ride = rideRows[0] as any;
 
     if (!ride) return NextResponse.json({ error: 'Corsa non trovata' }, { status: 404 });
 
@@ -43,30 +43,31 @@ export async function PATCH(
         return NextResponse.json({ error: 'Usa "Rifiuta" per rifiutare una corsa' }, { status: 403 });
     }
 
-    db.prepare('UPDATE rides SET status = ? WHERE id = ?').run(status, id);
+    await query('UPDATE rides SET status = $1 WHERE id = $2', [status, id]);
 
     // If driver interacts with the ride, mark related notifications as read
     if (user.role === 'driver') {
-        db.prepare('UPDATE notifications SET read = 1 WHERE ride_id = ? AND driver_user_id = ?').run(id, user.id);
+        await query('UPDATE notifications SET read = 1 WHERE ride_id = $1 AND driver_user_id = $2', [id, user.id]);
     }
 
     // Update driver stats when completed
     if (status === 'completed') {
-        db.prepare('UPDATE drivers SET rides_count = rides_count + 1 WHERE user_id = ?').run(ride.driver_user_id);
+        await query('UPDATE drivers SET rides_count = rides_count + 1 WHERE user_id = $1', [ride.driver_user_id]);
 
         // Recalculate rating avg
-        const avgResult = db.prepare(
-            'SELECT AVG(stars) as avg, COUNT(*) as cnt FROM reviews WHERE driver_user_id = ?'
-        ).get(ride.driver_user_id) as any;
+        const { rows: avgRows } = await query(
+            'SELECT AVG(stars) as avg, COUNT(*) as cnt FROM reviews WHERE driver_user_id = $1', [ride.driver_user_id]
+        );
+        const avgResult = avgRows[0] as any;
 
         if (avgResult?.avg) {
-            db.prepare('UPDATE drivers SET rating_avg = ? WHERE user_id = ?').run(
+            await query('UPDATE drivers SET rating_avg = $1 WHERE user_id = $2', [
                 Math.round(avgResult.avg * 10) / 10,
                 ride.driver_user_id
-            );
+            ]);
         }
     }
 
-    const updated = db.prepare('SELECT * FROM rides WHERE id = ?').get(id);
-    return NextResponse.json({ ride: updated });
+    const { rows: updatedRows } = await query('SELECT * FROM rides WHERE id = $1', [id]);
+    return NextResponse.json({ ride: updatedRows[0] });
 }

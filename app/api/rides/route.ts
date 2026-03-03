@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -8,27 +8,28 @@ export async function GET(request: NextRequest) {
     const user = await getSession();
     if (!user) return NextResponse.json({ error: 'Non autenticato' }, { status: 401 });
 
-    const db = getDb();
     let rides;
 
     if (user.role === 'customer') {
-        rides = db.prepare(`
+        const { rows } = await query(`
       SELECT r.*, d.name as driver_name, d.avatar_url as driver_avatar, d.car_model,
              u.nickname as customer_nickname
       FROM rides r
       JOIN drivers d ON d.user_id = r.driver_user_id
       JOIN users u ON u.id = r.customer_user_id
-      WHERE r.customer_user_id = ?
+      WHERE r.customer_user_id = $1
       ORDER BY r.ride_datetime DESC
-    `).all(user.id);
+    `, [user.id]);
+        rides = rows;
     } else {
-        rides = db.prepare(`
+        const { rows } = await query(`
       SELECT r.*, u.nickname as customer_nickname, u.email as customer_email
       FROM rides r
       JOIN users u ON u.id = r.customer_user_id
-      WHERE r.driver_user_id = ?
+      WHERE r.driver_user_id = $1
       ORDER BY r.created_at DESC
-    `).all(user.id);
+    `, [user.id]);
+        rides = rows;
     }
 
     return NextResponse.json({ rides });
@@ -55,10 +56,9 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Non puoi prenotare nel passato! ⏰' }, { status: 400 });
         }
 
-        const db = getDb();
-
         // Check driver exists and get seats
-        const driver = db.prepare('SELECT * FROM drivers WHERE user_id = ?').get(driver_user_id) as any;
+        const { rows: driverRows } = await query('SELECT * FROM drivers WHERE user_id = $1', [driver_user_id]);
+        const driver = driverRows[0] as any;
         if (!driver) {
             return NextResponse.json({ error: 'Autista non trovato' }, { status: 404 });
         }
@@ -72,33 +72,33 @@ export async function POST(request: NextRequest) {
         }
 
         // Check driver availability at that time (within 2 hours)
-        const rideDateStr = ride_datetime;
         const windowStart = new Date(rideDate.getTime() - 2 * 60 * 60 * 1000).toISOString();
         const windowEnd = new Date(rideDate.getTime() + 2 * 60 * 60 * 1000).toISOString();
 
-        const conflict = db.prepare(`
+        const { rows: conflictRows } = await query(`
       SELECT id FROM rides
-      WHERE driver_user_id = ?
-        AND ride_datetime BETWEEN ? AND ?
+      WHERE driver_user_id = $1
+        AND ride_datetime BETWEEN $2 AND $3
         AND status IN ('pending', 'accepted')
-    `).get(driver_user_id, windowStart, windowEnd);
+    `, [driver_user_id, windowStart, windowEnd]);
+        const conflict = conflictRows[0];
 
         if (conflict) {
             // Get alternative drivers
-            const alternatives = db.prepare(`
+            const { rows: alternatives } = await query(`
         SELECT d.user_id, d.name, d.rating_avg, d.seats
         FROM drivers d
-        WHERE d.user_id != ?
+        WHERE d.user_id != $1
           AND d.available = 1
-          AND d.seats >= ?
+          AND d.seats >= $2
           AND d.user_id NOT IN (
             SELECT driver_user_id FROM rides
-            WHERE ride_datetime BETWEEN ? AND ?
+            WHERE ride_datetime BETWEEN $3 AND $4
               AND status IN ('pending', 'accepted')
           )
         ORDER BY d.rating_avg DESC
         LIMIT 3
-      `).all(driver_user_id, passengerCount, windowStart, windowEnd);
+      `, [driver_user_id, passengerCount, windowStart, windowEnd]);
 
             return NextResponse.json({
                 error: `Autista occupato in quella fascia oraria 😕`,
@@ -110,20 +110,20 @@ export async function POST(request: NextRequest) {
         const id = uuidv4();
         const now = new Date().toISOString();
 
-        db.prepare(`
+        await query(`
       INSERT INTO rides (id, customer_user_id, driver_user_id, from_loc, to_loc, ride_datetime, passengers, notes, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-    `).run(id, user.id, driver_user_id, from_loc, to_loc, ride_datetime, passengerCount, notes || '', now);
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9)
+    `, [id, user.id, driver_user_id, from_loc, to_loc, ride_datetime, passengerCount, notes || '', now]);
 
         // Create notification for driver
         const notifId = uuidv4();
-        db.prepare(`
+        await query(`
       INSERT INTO notifications (id, driver_user_id, message, ride_id, read, created_at)
-      VALUES (?, ?, ?, ?, 0, ?)
-    `).run(notifId, driver_user_id, `🚨 Nuova corsa in arrivo da ${user.nickname || user.email}!`, id, now);
+      VALUES ($1, $2, $3, $4, 0, $5)
+    `, [notifId, driver_user_id, `🚨 Nuova corsa in arrivo da ${user.nickname || user.email}!`, id, now]);
 
-        const ride = db.prepare('SELECT * FROM rides WHERE id = ?').get(id);
-        return NextResponse.json({ ride }, { status: 201 });
+        const { rows: ridesRows } = await query('SELECT * FROM rides WHERE id = $1', [id]);
+        return NextResponse.json({ ride: ridesRows[0] }, { status: 201 });
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }

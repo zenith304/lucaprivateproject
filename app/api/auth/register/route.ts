@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { query, getClient } from '@/lib/db';
 import { createSession, setSessionCookie } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -20,8 +20,8 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Numero posti obbligatorio (1–8)' }, { status: 400 });
         }
 
-        const db = getDb();
-        const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+        const { rows } = await query('SELECT id FROM users WHERE email = $1', [email]);
+        const existing = rows[0];
         if (existing) {
             return NextResponse.json({ error: 'Email già registrata' }, { status: 409 });
         }
@@ -30,19 +30,28 @@ export async function POST(request: NextRequest) {
         const hash = bcrypt.hashSync(password, 10);
         const now = new Date().toISOString();
 
-        const insertUser = db.prepare(
-            'INSERT INTO users (id, email, password_hash, role, nickname, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        );
         const displayName = nickname || name || email.split('@')[0];
 
-        db.transaction(() => {
-            insertUser.run(id, email, hash, role, displayName, now);
+        const dbClient = await getClient();
+        try {
+            await dbClient.query('BEGIN');
+            await dbClient.query(
+                'INSERT INTO users (id, email, password_hash, role, nickname, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+                [id, email, hash, role, displayName, now]
+            );
             if (role === 'driver') {
-                db.prepare(
-                    'INSERT INTO drivers (user_id, name, avatar_url, car_model, seats, available, rating_avg, rides_count) VALUES (?, ?, ?, ?, ?, 1, 0, 0)'
-                ).run(id, name || displayName, avatar_url || '', car_model || '', seats);
+                await dbClient.query(
+                    'INSERT INTO drivers (user_id, name, avatar_url, car_model, seats, available, rating_avg, rides_count) VALUES ($1, $2, $3, $4, $5, 1, 0, 0)',
+                    [id, name || displayName, avatar_url || '', car_model || '', seats]
+                );
             }
-        })();
+            await dbClient.query('COMMIT');
+        } catch (e) {
+            await dbClient.query('ROLLBACK');
+            throw e;
+        } finally {
+            dbClient.release();
+        }
 
         const token = await createSession({ id, email, role, nickname: displayName });
         const cookieOpts = setSessionCookie(token);

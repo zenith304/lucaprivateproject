@@ -1,38 +1,44 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
 
-const DB_PATH = path.join(process.cwd(), 'data', 'clandestino.db');
-
-let db: Database.Database;
-
-export function getDb(): Database.Database {
-    if (!db) {
-        // Ensure data directory exists
-        const fs = require('fs');
-        const dataDir = path.join(process.cwd(), 'data');
-        if (!fs.existsSync(dataDir)) {
-            fs.mkdirSync(dataDir, { recursive: true });
-        }
-
-        db = new Database(DB_PATH);
-        db.pragma('journal_mode = WAL');
-        db.pragma('foreign_keys = ON');
-        initSchema(db);
-        seedData(db);
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
     }
-    return db;
+});
+
+let _dbInitialized = false;
+
+export async function query(text: string, params?: any[]) {
+    if (!_dbInitialized) {
+        await initSchema();
+        await seedData();
+        _dbInitialized = true;
+    }
+    return pool.query(text, params);
 }
 
-function initSchema(db: Database.Database) {
-    db.exec(`
+// Function to start a transaction explicitly and return the client
+export async function getClient() {
+    if (!_dbInitialized) {
+        await initSchema();
+        await seedData();
+        _dbInitialized = true;
+    }
+    return pool.connect();
+}
+
+async function initSchema() {
+    await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('customer', 'driver')),
       nickname TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS drivers (
@@ -52,11 +58,11 @@ function initSchema(db: Database.Database) {
       driver_user_id TEXT NOT NULL REFERENCES users(id),
       from_loc TEXT NOT NULL,
       to_loc TEXT NOT NULL,
-      ride_datetime TEXT NOT NULL,
+      ride_datetime TIMESTAMP NOT NULL,
       passengers INTEGER NOT NULL DEFAULT 1,
       notes TEXT,
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','refused','completed','cancelled')),
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS reviews (
@@ -67,7 +73,7 @@ function initSchema(db: Database.Database) {
       stars INTEGER NOT NULL CHECK(stars BETWEEN 1 AND 5),
       review_text TEXT,
       tags TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS notifications (
@@ -76,18 +82,17 @@ function initSchema(db: Database.Database) {
       message TEXT NOT NULL,
       ride_id TEXT,
       read INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS seed_done (done INTEGER PRIMARY KEY);
   `);
 }
 
-function seedData(db: Database.Database) {
-    const already = db.prepare('SELECT done FROM seed_done WHERE done=1').get();
-    if (already) return;
+async function seedData() {
+    const { rows } = await pool.query('SELECT done FROM seed_done WHERE done=1');
+    if (rows.length > 0) return;
 
-    const { v4: uuidv4 } = require('uuid');
     const now = new Date().toISOString();
 
     const drivers = [
@@ -150,22 +155,15 @@ function seedData(db: Database.Database) {
         nickname: 'Cliente Demo',
     };
 
-    const insertUser = db.prepare(
-        'INSERT INTO users (id, email, password_hash, role, nickname, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-    );
-    const insertDriver = db.prepare(
-        'INSERT INTO drivers (user_id, name, avatar_url, car_model, seats, available, rating_avg, rides_count) VALUES (?, ?, ?, ?, ?, 1, ?, ?)'
-    );
-    const insertRide = db.prepare(
-        'INSERT INTO rides (id, customer_user_id, driver_user_id, from_loc, to_loc, ride_datetime, passengers, notes, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    );
-    const insertReview = db.prepare(
-        'INSERT INTO reviews (id, ride_id, driver_user_id, customer_user_id, stars, review_text, tags, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    );
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
 
-    const seedTx = db.transaction(() => {
         // Insert customer
-        insertUser.run(customer.id, customer.email, bcrypt.hashSync(customer.password, 10), 'customer', customer.nickname, now);
+        await client.query(
+            'INSERT INTO users (id, email, password_hash, role, nickname, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+            [customer.id, customer.email, bcrypt.hashSync(customer.password, 10), 'customer', customer.nickname, now]
+        );
 
         // Demo ratings and ride counts for drivers
         const demoStats = [
@@ -176,11 +174,18 @@ function seedData(db: Database.Database) {
             { rating: 4.6, rides: 33 },
         ];
 
-        drivers.forEach((d, i) => {
+        for (let i = 0; i < drivers.length; i++) {
+            const d = drivers[i];
             const hash = bcrypt.hashSync(d.password, 10);
-            insertUser.run(d.id, d.email, hash, 'driver', d.nickname, now);
-            insertDriver.run(d.id, d.name, d.avatar_url, d.car_model, d.seats, demoStats[i].rating, demoStats[i].rides);
-        });
+            await client.query(
+                'INSERT INTO users (id, email, password_hash, role, nickname, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+                [d.id, d.email, hash, 'driver', d.nickname, now]
+            );
+            await client.query(
+                'INSERT INTO drivers (user_id, name, avatar_url, car_model, seats, available, rating_avg, rides_count) VALUES ($1, $2, $3, $4, $5, 1, $6, $7)',
+                [d.id, d.name, d.avatar_url, d.car_model, d.seats, demoStats[i].rating, demoStats[i].rides]
+            );
+        }
 
         // Some demo completed rides
         const rideId1 = uuidv4();
@@ -188,15 +193,34 @@ function seedData(db: Database.Database) {
         const pastDate1 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
         const pastDate2 = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
 
-        insertRide.run(rideId1, customer.id, drivers[0].id, 'Piazza Roma', 'Aeroporto Malpensa', pastDate1, 2, 'Volo alle 8:30', 'completed', pastDate1);
-        insertRide.run(rideId2, customer.id, drivers[2].id, 'Casa mia', 'Stadio Meazza', pastDate2, 3, '', 'completed', pastDate2);
+        await client.query(
+            'INSERT INTO rides (id, customer_user_id, driver_user_id, from_loc, to_loc, ride_datetime, passengers, notes, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+            [rideId1, customer.id, drivers[0].id, 'Piazza Roma', 'Aeroporto Malpensa', pastDate1, 2, 'Volo alle 8:30', 'completed', pastDate1]
+        );
+
+        await client.query(
+            'INSERT INTO rides (id, customer_user_id, driver_user_id, from_loc, to_loc, ride_datetime, passengers, notes, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+            [rideId2, customer.id, drivers[2].id, 'Casa mia', 'Stadio Meazza', pastDate2, 3, '', 'completed', pastDate2]
+        );
 
         // Reviews for completed rides
-        insertReview.run(uuidv4(), rideId1, drivers[0].id, customer.id, 5, 'Puntualissimo e gentilissimo!', JSON.stringify(['Puntuale ⏰', 'Guida smooth 🛣️']), pastDate1);
-        insertReview.run(uuidv4(), rideId2, drivers[2].id, customer.id, 5, 'Guida fantastica, macchina comodissima!', JSON.stringify(['DJ top 🎵', 'Guida smooth 🛣️']), pastDate2);
+        await client.query(
+            'INSERT INTO reviews (id, ride_id, driver_user_id, customer_user_id, stars, review_text, tags, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+            [uuidv4(), rideId1, drivers[0].id, customer.id, 5, 'Puntualissimo e gentilissimo!', JSON.stringify(['Puntuale ⏰', 'Guida smooth 🛣️']), pastDate1]
+        );
 
-        db.prepare('INSERT INTO seed_done (done) VALUES (1)').run();
-    });
+        await client.query(
+            'INSERT INTO reviews (id, ride_id, driver_user_id, customer_user_id, stars, review_text, tags, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+            [uuidv4(), rideId2, drivers[2].id, customer.id, 5, 'Guida fantastica, macchina comodissima!', JSON.stringify(['DJ top 🎵', 'Guida smooth 🛣️']), pastDate2]
+        );
 
-    seedTx();
+        await client.query('INSERT INTO seed_done (done) VALUES (1)');
+
+        await client.query('COMMIT');
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error('Failed to seed DB', e);
+    } finally {
+        client.release();
+    }
 }

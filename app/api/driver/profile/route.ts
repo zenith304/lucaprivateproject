@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { query } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 
 // GET /api/driver/profile
@@ -9,15 +9,15 @@ export async function GET() {
         return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
     }
 
-    const db = getDb();
-    const driver = db.prepare('SELECT * FROM drivers WHERE user_id = ?').get(user.id) as any;
-    const reviews = db.prepare(`
+    const { rows: driverRows } = await query('SELECT * FROM drivers WHERE user_id = $1', [user.id]);
+    const driver = driverRows[0] as any;
+    const { rows: reviews } = await query(`
     SELECT r.*, u.nickname as customer_name
     FROM reviews r
     JOIN users u ON u.id = r.customer_user_id
-    WHERE r.driver_user_id = ?
+    WHERE r.driver_user_id = $1
     ORDER BY r.created_at DESC
-  `).all(user.id);
+  `, [user.id]);
 
     return NextResponse.json({ driver, reviews });
 }
@@ -36,27 +36,27 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: 'Posti deve essere tra 1 e 8' }, { status: 400 });
     }
 
-    const db = getDb();
-    const driver = db.prepare('SELECT * FROM drivers WHERE user_id = ?').get(user.id) as any;
+    const { rows: driverRows } = await query('SELECT * FROM drivers WHERE user_id = $1', [user.id]);
+    const driver = driverRows[0] as any;
     if (!driver) return NextResponse.json({ error: 'Profilo non trovato' }, { status: 404 });
 
-    db.prepare(`
+    await query(`
     UPDATE drivers SET
-      name = COALESCE(?, name),
-      avatar_url = COALESCE(?, avatar_url),
-      car_model = COALESCE(?, car_model),
-      seats = COALESCE(?, seats),
-      available = COALESCE(?, available)
-    WHERE user_id = ?
-  `).run(
+      name = COALESCE($1, name),
+      avatar_url = COALESCE($2, avatar_url),
+      car_model = COALESCE($3, car_model),
+      seats = COALESCE($4, seats),
+      available = COALESCE($5, available)
+    WHERE user_id = $6
+  `, [
         name ?? null,
         avatar_url !== undefined ? avatar_url : null,
         car_model ?? null,
         seats ?? null,
         available !== undefined ? (available ? 1 : 0) : null,
         user.id
-    );
+    ]);
 
-    const updated = db.prepare('SELECT * FROM drivers WHERE user_id = ?').get(user.id);
-    return NextResponse.json({ driver: updated });
+    const { rows: updatedRows } = await query('SELECT * FROM drivers WHERE user_id = $1', [user.id]);
+    return NextResponse.json({ driver: updatedRows[0] });
 }
