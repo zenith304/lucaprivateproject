@@ -142,9 +142,14 @@ export default function DriverDashboard() {
                                     <div className="ride-meta-row">📅 <span>{formatDate(ride.ride_datetime)}</span></div>
                                     <div className="ride-meta-row">👥 <span>{ride.passengers} passeggeri</span></div>
                                 </div>
-                                <button className="btn btn-primary btn-sm" onClick={() => updateStatus(ride.id, 'completed')}>
-                                    🏁 Segna completata
-                                </button>
+                                <div className="d-flex gap-8">
+                                    <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => updateStatus(ride.id, 'completed')}>
+                                        🏁 Completa
+                                    </button>
+                                    <button className="btn btn-danger btn-sm" onClick={() => updateStatus(ride.id, 'cancelled')}>
+                                        🚫 Annulla
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>

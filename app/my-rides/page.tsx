@@ -96,11 +96,29 @@ export default function MyRidesPage() {
                                     {ride.notes && <div className="ride-meta-row">📝 <span style={{ color: 'var(--text2)' }}>{ride.notes}</span></div>}
                                 </div>
                                 <div className="d-flex gap-8" style={{ flexWrap: 'wrap' }}>
-                                    {ride.status === 'pending' && (
-                                        <button className="btn btn-danger btn-sm" onClick={() => cancel(ride.id)}>
-                                            ✕ Annulla
-                                        </button>
-                                    )}
+                                    {(() => {
+                                        if (ride.status === 'pending') {
+                                            return (
+                                                <button className="btn btn-danger btn-sm" onClick={() => cancel(ride.id)}>
+                                                    ✕ Annulla
+                                                </button>
+                                            );
+                                        }
+                                        if (ride.status === 'accepted') {
+                                            const rideDate = new Date(ride.ride_datetime);
+                                            const now = new Date();
+                                            const hoursDifference = (rideDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+                                            if (hoursDifference >= 2) {
+                                                return (
+                                                    <button className="btn btn-danger btn-sm" onClick={() => cancel(ride.id)}>
+                                                        ✕ Annulla
+                                                    </button>
+                                                );
+                                            }
+                                        }
+                                        return null;
+                                    })()}
                                     {hasReview && (
                                         <Link href={`/review/${ride.id}`} className="btn btn-primary btn-sm">
                                             ⭐ Lascia recensione

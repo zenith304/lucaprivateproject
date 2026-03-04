@@ -36,11 +36,33 @@ export async function PATCH(
     if (user.role === 'customer' && status !== 'cancelled') {
         return NextResponse.json({ error: 'Il cliente può solo annullare' }, { status: 403 });
     }
-    if (user.role === 'customer' && ride.status === 'accepted') {
-        return NextResponse.json({ error: 'Non puoi annullare una corsa già accettata' }, { status: 400 });
-    }
-    if (user.role === 'driver' && status === 'cancelled') {
-        return NextResponse.json({ error: 'Usa "Rifiuta" per rifiutare una corsa' }, { status: 403 });
+
+    if (status === 'cancelled') {
+        if (user.role === 'customer') {
+            // Customer cancellation rules
+            if (ride.status === 'completed' || ride.status === 'refused' || ride.status === 'cancelled') {
+                return NextResponse.json({ error: 'Stato corsa non valido per l\'annullamento' }, { status: 400 });
+            }
+
+            // If ride is accepted, check that it's more than 2 hours away
+            if (ride.status === 'accepted') {
+                const rideDate = new Date(ride.ride_datetime);
+                const now = new Date();
+                const hoursDifference = (rideDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+                if (hoursDifference < 2) {
+                    return NextResponse.json({ error: 'Puoi annullare una prenotazione accettata solo con almeno 2 ore di preavviso' }, { status: 400 });
+                }
+            }
+        } else if (user.role === 'driver') {
+            // Driver cancellation rules
+            // Allow if accepted. Deny if already completed/cancelled/refused
+            if (ride.status !== 'accepted' && ride.status !== 'pending') {
+                return NextResponse.json({ error: 'Stato corsa non valido per l\'annullamento' }, { status: 400 });
+            }
+        }
+    } else if (user.role === 'driver' && status === 'cancelled') {
+        // this block is handled by the block above
     }
 
     await query('UPDATE rides SET status = $1 WHERE id = $2', [status, id]);
