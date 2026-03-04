@@ -49,8 +49,10 @@ async function initSchema() {
       seats INTEGER NOT NULL DEFAULT 4 CHECK(seats BETWEEN 1 AND 8),
       available INTEGER NOT NULL DEFAULT 1,
       rating_avg REAL NOT NULL DEFAULT 0,
-      rides_count INTEGER NOT NULL DEFAULT 0
+      rides_count INTEGER NOT NULL DEFAULT 0,
+      work_shifts TEXT DEFAULT '[]'
     );
+
 
     CREATE TABLE IF NOT EXISTS rides (
       id TEXT PRIMARY KEY,
@@ -182,8 +184,8 @@ async function seedData() {
                 [d.id, d.email, hash, 'driver', d.nickname, now]
             );
             await client.query(
-                'INSERT INTO drivers (user_id, name, avatar_url, car_model, seats, available, rating_avg, rides_count) VALUES ($1, $2, $3, $4, $5, 1, $6, $7)',
-                [d.id, d.name, d.avatar_url, d.car_model, d.seats, demoStats[i].rating, demoStats[i].rides]
+                'INSERT INTO drivers (user_id, name, avatar_url, car_model, seats, available, rating_avg, rides_count, work_shifts) VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8)',
+                [d.id, d.name, d.avatar_url, d.car_model, d.seats, demoStats[i].rating, demoStats[i].rides, '[]']
             );
         }
 

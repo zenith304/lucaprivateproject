@@ -30,7 +30,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, avatar_url, car_model, seats, available } = body;
+    const { name, avatar_url, car_model, seats, available, work_shifts } = body;
 
     if (seats !== undefined && (seats < 1 || seats > 8)) {
         return NextResponse.json({ error: 'Posti deve essere tra 1 e 8' }, { status: 400 });
@@ -46,14 +46,16 @@ export async function PATCH(request: NextRequest) {
       avatar_url = COALESCE($2, avatar_url),
       car_model = COALESCE($3, car_model),
       seats = COALESCE($4, seats),
-      available = COALESCE($5, available)
-    WHERE user_id = $6
+      available = COALESCE($5, available),
+      work_shifts = COALESCE($6, work_shifts)
+    WHERE user_id = $7
   `, [
         name ?? null,
         avatar_url !== undefined ? avatar_url : null,
         car_model ?? null,
         seats ?? null,
         available !== undefined ? (available ? 1 : 0) : null,
+        work_shifts !== undefined ? JSON.stringify(work_shifts) : null,
         user.id
     ]);
 

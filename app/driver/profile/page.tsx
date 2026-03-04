@@ -22,6 +22,7 @@ interface Driver {
     available: number;
     rating_avg: number;
     rides_count: number;
+    work_shifts?: { start: string, end: string }[];
 }
 
 function StarDisplay({ n }: { n: number }) {
@@ -47,7 +48,13 @@ export default function DriverProfilePage() {
     const [driver, setDriver] = useState<Driver | null>(null);
     const [reviews, setReviews] = useState<Review[]>([]);
     const [editing, setEditing] = useState(false);
-    const [form, setForm] = useState({ name: '', avatar_url: '', car_model: '', seats: 4 });
+    const [form, setForm] = useState<{
+        name: string,
+        avatar_url: string,
+        car_model: string,
+        seats: number,
+        work_shifts: { start: string, end: string }[]
+    }>({ name: '', avatar_url: '', car_model: '', seats: 4, work_shifts: [] });
     const [saving, setSaving] = useState(false);
 
     const fetchProfile = async () => {
@@ -55,7 +62,19 @@ export default function DriverProfilePage() {
         const data = await r.json();
         if (data.driver) {
             setDriver(data.driver);
-            setForm({ name: data.driver.name, avatar_url: data.driver.avatar_url || '', car_model: data.driver.car_model || '', seats: data.driver.seats });
+            let shifts = [];
+            try {
+                if (data.driver.work_shifts) {
+                    shifts = typeof data.driver.work_shifts === 'string' ? JSON.parse(data.driver.work_shifts) : data.driver.work_shifts;
+                }
+            } catch (e) { }
+            setForm({
+                name: data.driver.name,
+                avatar_url: data.driver.avatar_url || '',
+                car_model: data.driver.car_model || '',
+                seats: data.driver.seats,
+                work_shifts: shifts
+            });
         }
         setReviews(data.reviews || []);
     };
@@ -115,6 +134,21 @@ export default function DriverProfilePage() {
                     <div className="fw-bold" style={{ fontSize: '1.15rem' }}>{driver.name}</div>
                     {driver.car_model && <div className="text-sm text-muted">🚗 {driver.car_model}</div>}
                     <div className="text-sm text-muted">👥 {driver.seats} posti</div>
+                    {(() => {
+                        let shifts = [];
+                        try {
+                            if (driver.work_shifts) {
+                                shifts = typeof driver.work_shifts === 'string' ? JSON.parse(driver.work_shifts) : driver.work_shifts;
+                            }
+                        } catch (e) { }
+                        return shifts.length > 0 ? (
+                            <div className="text-sm text-muted" style={{ marginTop: 4 }}>
+                                🕘 Orari: {shifts.map((s: any) => `${s.start}-${s.end}`).join(', ')}
+                            </div>
+                        ) : (
+                            <div className="text-sm text-muted" style={{ marginTop: 4 }}>🕘 Sempre disponibile</div>
+                        );
+                    })()}
                     <div className="d-flex ai-center gap-8 mt-8" style={{ gap: 8 }}>
                         <span style={{ color: '#f59e0b', fontSize: '1rem' }}>★</span>
                         <span className="fw-bold">{driver.rating_avg > 0 ? driver.rating_avg.toFixed(1) : '–'}</span>
@@ -162,6 +196,44 @@ export default function DriverProfilePage() {
                                 <button type="button" className="stepper-btn"
                                     onClick={() => setForm(f => ({ ...f, seats: Math.min(8, f.seats + 1) }))}>+</button>
                             </div>
+                        </div>
+                        <div className="form-group mb-16">
+                            <div className="d-flex jc-between ai-center mb-8">
+                                <label className="form-label" style={{ marginBottom: 0 }}>Orari di disponibilità (Fasce orarie)</label>
+                                <button type="button" className="btn btn-sm btn-outline"
+                                    onClick={() => setForm(f => ({ ...f, work_shifts: [...f.work_shifts, { start: '08:00', end: '12:00' }] }))}>
+                                    + Aggiungi fascia
+                                </button>
+                            </div>
+                            {form.work_shifts.length === 0 ? (
+                                <div className="text-sm text-muted">Nessuna fascia oraria impostata (Riceverai richieste sempre).</div>
+                            ) : (
+                                <div className="d-flex flex-col gap-8">
+                                    {form.work_shifts.map((shift, idx) => (
+                                        <div key={idx} className="d-flex gap-8 ai-center">
+                                            <input type="time" className="form-input" style={{ flex: 1 }} value={shift.start}
+                                                onChange={e => {
+                                                    const newShifts = [...form.work_shifts];
+                                                    newShifts[idx].start = e.target.value;
+                                                    setForm(f => ({ ...f, work_shifts: newShifts }));
+                                                }} required />
+                                            <span>-</span>
+                                            <input type="time" className="form-input" style={{ flex: 1 }} value={shift.end}
+                                                onChange={e => {
+                                                    const newShifts = [...form.work_shifts];
+                                                    newShifts[idx].end = e.target.value;
+                                                    setForm(f => ({ ...f, work_shifts: newShifts }));
+                                                }} required />
+                                            <button type="button" className="btn btn-sm btn-danger" style={{ padding: '0 10px', minWidth: 'auto' }}
+                                                onClick={() => {
+                                                    const newShifts = [...form.work_shifts];
+                                                    newShifts.splice(idx, 1);
+                                                    setForm(f => ({ ...f, work_shifts: newShifts }));
+                                                }}>✕</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                         <div className="d-flex gap-8">
                             <button className="btn btn-primary" type="submit" disabled={saving}>

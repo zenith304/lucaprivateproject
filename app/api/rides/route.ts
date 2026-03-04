@@ -71,40 +71,71 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // Check driver availability at that time (within 2 hours)
-        const windowStart = new Date(rideDate.getTime() - 2 * 60 * 60 * 1000).toISOString();
-        const windowEnd = new Date(rideDate.getTime() + 2 * 60 * 60 * 1000).toISOString();
+        // Check driver's work shifts
+        let shifts = [];
+        try {
+            if (driver.work_shifts) {
+                shifts = typeof driver.work_shifts === 'string' ? JSON.parse(driver.work_shifts) : driver.work_shifts;
+            }
+        } catch (e) { }
+
+        if (shifts && shifts.length > 0) {
+            // we need to get the local time of the ride to compare it with the HH:mm strings
+            // Javascript Dates are tricky, let's just get the local hours and minutes from the frontend input context if we can,
+            // or we evaluate it using Italian timezone
+            const localDateStr = new Date(ride_datetime).toLocaleString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+
+            let isWithinShift = false;
+            for (const shift of shifts) {
+                if (localDateStr >= shift.start && localDateStr <= shift.end) {
+                    isWithinShift = true;
+                    break;
+                }
+            }
+
+            if (!isWithinShift) {
+                return NextResponse.json({
+                    error: `L'autista non è in turno a quest'ora. Orari: ${shifts.map((s: any) => `${s.start}-${s.end}`).join(', ')}`
+                }, { status: 400 });
+            }
+        }
+
+        // Smart Carpooling (40-minute window)
+        const windowStart = new Date(rideDate.getTime() - 40 * 60 * 1000).toISOString();
+        const windowEnd = new Date(rideDate.getTime() + 40 * 60 * 1000).toISOString();
 
         const { rows: conflictRows } = await query(`
-      SELECT id FROM rides
+      SELECT * FROM rides
       WHERE driver_user_id = $1
         AND ride_datetime BETWEEN $2 AND $3
         AND status IN ('pending', 'accepted')
     `, [driver_user_id, windowStart, windowEnd]);
-        const conflict = conflictRows[0];
 
-        if (conflict) {
-            // Get alternative drivers
-            const { rows: alternatives } = await query(`
-        SELECT d.user_id, d.name, d.rating_avg, d.seats
-        FROM drivers d
-        WHERE d.user_id != $1
-          AND d.available = 1
-          AND d.seats >= $2
-          AND d.user_id NOT IN (
-            SELECT driver_user_id FROM rides
-            WHERE ride_datetime BETWEEN $3 AND $4
-              AND status IN ('pending', 'accepted')
-          )
-        ORDER BY d.rating_avg DESC
-        LIMIT 3
-      `, [driver_user_id, passengerCount, windowStart, windowEnd]);
+        if (conflictRows.length > 0) {
+            // calculate total booked passengers in this 40 min window
+            const bookedPassengers = conflictRows.reduce((sum: number, r: any) => sum + r.passengers, 0);
+            const remainingSeats = driver.seats - bookedPassengers;
 
-            return NextResponse.json({
-                error: `Autista occupato in quella fascia oraria 😕`,
-                alternatives,
-                conflict: true,
-            }, { status: 409 });
+            if (passengerCount > remainingSeats) {
+                return NextResponse.json({
+                    error: `Impossibile prenotare per questo orario. L'auto è già piena in quell'intervallo di tempo.`
+                }, { status: 409 });
+            }
+
+            // We have space, but there's a ride nearby. Let's suggest joining it exactly!
+            // Find the closest ride in time
+            const existingRide = conflictRows[0];
+            const existingRideTimeStr = new Date(existingRide.ride_datetime).getTime();
+
+            // if it's not the exact same millisecond, suggest merging
+            if (existingRideTimeStr !== rideDate.getTime()) {
+                const diffMins = Math.round(Math.abs(existingRideTimeStr - rideDate.getTime()) / 60000);
+                const beforeOrAfter = existingRideTimeStr < rideDate.getTime() ? 'prima' : 'dopo';
+                const exactTimeFormatted = new Date(existingRide.ride_datetime).toLocaleString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                return NextResponse.json({
+                    error: `Attenzione! C'è già una corsa che parte ${diffMins} minuti ${beforeOrAfter} (con a bordo ${bookedPassengers} persone). Se vuoi, puoi unirti a loro prenotando ESATTAMENTE alle ${exactTimeFormatted}!`
+                }, { status: 409 });
+            }
         }
 
         const id = uuidv4();
