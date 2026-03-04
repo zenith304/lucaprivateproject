@@ -45,8 +45,10 @@ function BookingForm() {
         });
     }, []);
 
-    // Min datetime (now + 5min)
-    const minDatetime = new Date(Date.now() + 5 * 60 * 1000).toISOString().slice(0, 16);
+    // Min datetime (now + 5min) adapted to local timezone offset for the HTML input
+    const futureDate = new Date(Date.now() + 5 * 60 * 1000);
+    futureDate.setMinutes(futureDate.getMinutes() - futureDate.getTimezoneOffset());
+    const minDatetime = futureDate.toISOString().slice(0, 16);
 
     const selectedDriver = drivers.find(d => d.user_id === form.driver_user_id);
 
@@ -58,10 +60,16 @@ function BookingForm() {
         setAlternatives([]);
         setLoading(true);
         try {
+            // Convert local selected datetime to UTC ISO string for backend
+            const payload = {
+                ...form,
+                ride_datetime: new Date(form.ride_datetime).toISOString()
+            };
+
             const r = await fetch('/api/rides', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(form),
+                body: JSON.stringify(payload),
             });
             const data = await r.json();
             if (!r.ok) {
