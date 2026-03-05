@@ -60,13 +60,29 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const driverId = searchParams.get('driver_id');
 
+    if (!driverId) {
+        return NextResponse.json({ error: 'Manca driver_id' }, { status: 400 });
+    }
+
+    const { rows: driverRows } = await query(`
+        SELECT user_id, name, avatar_url, rating_avg, rides_count, car_model
+        FROM drivers 
+        WHERE user_id = $1
+    `, [driverId]);
+
+    const driver = driverRows[0];
+    if (!driver) {
+        return NextResponse.json({ error: 'Autista non trovato' }, { status: 404 });
+    }
+
     const { rows: reviews } = await query(`
-    SELECT r.*, u.nickname as customer_name
+    SELECT r.*, u.nickname as customer_name, ri.from_loc, ri.to_loc
     FROM reviews r
     JOIN users u ON u.id = r.customer_user_id
+    JOIN rides ri ON ri.id = r.ride_id
     WHERE r.driver_user_id = $1
     ORDER BY r.created_at DESC
   `, [driverId]);
 
-    return NextResponse.json({ reviews });
+    return NextResponse.json({ driver, reviews });
 }

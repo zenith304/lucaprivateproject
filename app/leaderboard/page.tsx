@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 
 interface Driver {
@@ -88,7 +89,7 @@ export default function LeaderboardPage() {
                     {podiumOrder.map((driver, idx) => {
                         const realRank = drivers.indexOf(driver);
                         return (
-                            <div key={driver.user_id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1 }}>
+                            <Link key={driver.user_id} href={`/driver/${driver.user_id}/reviews`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1, textDecoration: 'none', color: 'inherit' }}>
                                 <Avatar name={driver.name} url={driver.avatar_url} size={idx === 1 ? 64 : 48} />
                                 <span style={{ fontSize: '0.75rem', fontWeight: 700, textAlign: 'center' }}>
                                     {driver.name.split(' ')[0]}
@@ -106,7 +107,7 @@ export default function LeaderboardPage() {
                                         {driver.rating_avg > 0 ? driver.rating_avg.toFixed(1) : '–'}★
                                     </div>
                                 </div>
-                            </div>
+                            </Link>
                         );
                     })}
                 </div>
@@ -115,7 +116,7 @@ export default function LeaderboardPage() {
             {/* Full list */}
             <div className="grid-list">
                 {drivers.map((driver, i) => (
-                    <div key={driver.user_id} className="card">
+                    <Link key={driver.user_id} href={`/driver/${driver.user_id}/reviews`} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }} className="card">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                             <div style={{
                                 width: 36, height: 36, borderRadius: '50%',
@@ -145,7 +146,7 @@ export default function LeaderboardPage() {
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </Link>
                 ))}
             </div>
 
