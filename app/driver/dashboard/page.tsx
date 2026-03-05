@@ -141,6 +141,18 @@ export default function DriverDashboard() {
                                     <div className="ride-meta-row">📍 <span>{ride.from_loc} → {ride.to_loc}</span></div>
                                     <div className="ride-meta-row">📅 <span>{formatDate(ride.ride_datetime)}</span></div>
                                     <div className="ride-meta-row">👥 <span>{ride.passengers} passeggeri</span></div>
+                                    <div className="ride-meta-row">✉️ <a href={`mailto:${ride.customer_email}`} style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Contatta cliente</a></div>
+                                </div>
+                                <div className="d-flex gap-8 mb-8">
+                                    <a
+                                        href={`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(ride.from_loc)}&destination=${encodeURIComponent(ride.to_loc)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="btn btn-outline btn-sm"
+                                        style={{ flex: 1, borderColor: '#4285F4', color: '#4285F4' }}
+                                    >
+                                        🗺️ Apri Navigatore
+                                    </a>
                                 </div>
                                 <div className="d-flex gap-8">
                                     <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => updateStatus(ride.id, 'completed')}>

@@ -28,8 +28,8 @@ export async function GET() {
                    c.nickname as customer_nickname, c.email as customer_email,
                    d.name as driver_name, d.car_model as driver_car
             FROM rides r
-            JOIN users c ON c.id = r.customer_user_id
-            JOIN drivers d ON d.user_id = r.driver_user_id
+            LEFT JOIN users c ON c.id = r.customer_user_id
+            LEFT JOIN drivers d ON d.user_id = r.driver_user_id
             ORDER BY r.ride_datetime DESC
         `);
         return NextResponse.json({ rides: rows });

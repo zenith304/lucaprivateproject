@@ -38,7 +38,7 @@ export default function DriverReviewsPage() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (!params.id) return;
+        if (!params || !params.id) return;
         fetch(`/api/reviews?driver_id=${params.id}`)
             .then(res => res.json())
             .then(data => {

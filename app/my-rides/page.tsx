@@ -18,6 +18,7 @@ interface Ride {
     status: string;
     created_at: string;
     customer_nickname?: string;
+    driver_user_id: string;
 }
 
 const STATUS_MAP: Record<string, { label: string; cls: string; emoji: string }> = {
@@ -95,7 +96,7 @@ export default function MyRidesPage() {
                                     <div className="ride-meta-row">👥 <span>{ride.passengers} {ride.passengers === 1 ? 'passeggero' : 'passeggeri'}</span></div>
                                     {ride.notes && <div className="ride-meta-row">📝 <span style={{ color: 'var(--text2)' }}>{ride.notes}</span></div>}
                                 </div>
-                                <div className="d-flex gap-8" style={{ flexWrap: 'wrap' }}>
+                                <div className="d-flex gap-8 ai-center" style={{ flexWrap: 'wrap' }}>
                                     {(() => {
                                         if (ride.status === 'pending') {
                                             return (
@@ -115,7 +116,20 @@ export default function MyRidesPage() {
                                                         ✕ Annulla
                                                     </button>
                                                 );
+                                            } else {
+                                                return (
+                                                    <span className="text-xs fw-bold" style={{ color: 'var(--danger)', padding: '4px 0' }}>
+                                                        🚫 Troppo tardi per annullare
+                                                    </span>
+                                                );
                                             }
+                                        }
+                                        if (ride.status === 'completed') {
+                                            return (
+                                                <Link href={`/booking?driver=${ride.driver_user_id}`} className="btn btn-outline btn-sm" style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+                                                    🔄 Riprenota
+                                                </Link>
+                                            );
                                         }
                                         return null;
                                     })()}

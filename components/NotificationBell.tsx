@@ -18,6 +18,9 @@ export default function NotificationBell() {
                 if (!activeToastId.current) {
                     activeToastId.current = addToast('🚨 Nuova corsa in arrivo!', 'warning', 0);
                 }
+            } else if (cnt < prevUnreadRef.current && activeToastId.current) {
+                removeToast(activeToastId.current);
+                activeToastId.current = null;
             } else if (cnt === 0 && activeToastId.current) {
                 removeToast(activeToastId.current);
                 activeToastId.current = null;
